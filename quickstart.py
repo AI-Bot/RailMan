@@ -1,4 +1,4 @@
-import sys,json,requests,time,urllib
+import sys,json,requests,time,urllib,re
 from wit import Wit
 railway_api='paxbk6508'
 if len(sys.argv) != 2:
@@ -14,6 +14,9 @@ def fetch_stnname(request):
     entities = request['entities']
     userinp = first_entity_value(entities, 'location').upper()
     code=stn_name_to_code(userinp)
+    if code=='':
+        context['stnname'] = 'Not found'
+        return context
     context['stnname']=code
     return context
 
@@ -46,9 +49,23 @@ def get_forecast(request):
 def fetch_statuspnr(request):
     context = request['context']
     entities = request['entities']
-    pnr=first_entity_value(entities,'number')
+    pnr=str(first_entity_value(entities,'number'))
+    pnr2 = first_entity_value(entities, 'location')
+    if pnr=='None':
+        #print('no pnr from number')
+        num=(re.findall(r'\b\d+\b', str(pnr2)))
+        if len(num)>0:
+            pnr=num[0]
+        else:
+            context['missingLocation']='yes'
+            return context
+
     url = 'http://api.railwayapi.com/pnr_status/pnr/' + str(pnr) + '/apikey/' + railway_api + '/'
     parsed_json = json.loads(requests.get(url).text)
+    error = (parsed_json['error'])
+    if str(error).lower() == 'true':
+        context['pnr_status']='Error: wrong pnr no./missing pnr'
+        return context
     from_stn = parsed_json['from_station']
     des_stn = parsed_json['reservation_upto']
     date_of_jrny = parsed_json['doj']
@@ -65,17 +82,33 @@ def fetch_statuspnr(request):
 def fetch_statustrain(request):
     context = request['context']
     entities = request['entities']
-    trainno=first_entity_value(entities,'number')
+    trainno=str(first_entity_value(entities,'number'))
+    trainno2= first_entity_value(entities, 'location')
+    if trainno=='None':
+        num = (re.findall(r'\b\d+\b', str(trainno2)))
+
+        trainno=num[0]
+
     url = 'http://api.railwayapi.com/live/train/'+str(trainno)+'/doj/' + str(time.strftime("%Y%m%d")) + '/apikey/' + railway_api + '/'
     parsed_json = json.loads(requests.get(url).text)
+    if str(parsed_json['response_code'])=='204':
+        context['train_status'] = 'Wrong Train no'
+        return context
+    if str(parsed_json['response_code']) == '510':
+        context['train_status'] = parsed_json['error']
+        return context
     train_status = parsed_json['position']
     context['train_status'] = train_status
     return context
 def fetch_stncode(request):
     context = request['context']
     entities = request['entities']
-    userinp=first_entity_value(entities,'location').upper()
+    userinp=str(first_entity_value(entities,'location')).upper()
+    print(userinp)
     name=stn_code_name(userinp)
+    if name=='':
+        context['stncode'] = "Wrong station code or enter in code capital letters"
+        return context
     context['stncode'] = name
     return context
 def stn_code_name(userinp):
