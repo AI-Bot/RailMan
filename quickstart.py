@@ -1,6 +1,8 @@
 import sys,json,requests,time,urllib,re
 from wit import Wit
-railway_api='paxbk6508'
+#railway_api='paxbk6508'
+#railway_api='xfagr5086'
+railway_api='hqvyn6929'
 if len(sys.argv) != 2:
     print('usage: python ' + sys.argv[0] + ' <wit-token>')
     exit(1)
@@ -64,7 +66,7 @@ def fetch_statuspnr(request):
     parsed_json = json.loads(requests.get(url).text)
     error = (parsed_json['error'])
     if str(error).lower() == 'true':
-        context['pnr_status']='Error: wrong pnr no./missing pnr'
+        context['pnr_status']='Error: Invalid/Old PNR No.'
         return context
     from_stn = parsed_json['from_station']
     des_stn = parsed_json['reservation_upto']
@@ -74,7 +76,7 @@ def fetch_statuspnr(request):
     status_list = '\nFROM ' + from_stn['name'] + ' TO ' + des_stn['name'] + ' \nDate of Journey ' + date_of_jrny + '\n'
     for x in range(total_passengers):
         passenger_data = passengers[total_passengers - 1]
-        status_list = status_list + ' No. ' + str(passenger_data['no']) + ' Status ' + passenger_data['current_status'] + '  ->' + passenger_data['booking_status'] + '\n'
+        status_list = status_list + ' 1. ' + str(passenger_data['no']) + ' Status ' + passenger_data['current_status'] + '  ->' + passenger_data['booking_status'] + '\n'
         total_passengers = total_passengers - 1
     context['pnr_status']=status_list
     return context
@@ -83,34 +85,42 @@ def fetch_statustrain(request):
     context = request['context']
     entities = request['entities']
     trainno=str(first_entity_value(entities,'number'))
-    trainno2= first_entity_value(entities, 'location')
+    trainno2 = str(first_entity_value(entities, 'location'))
     if trainno=='None':
         num = (re.findall(r'\b\d+\b', str(trainno2)))
+        if len(num) > 0:
+            trainno = num[0]
 
-        trainno=num[0]
+    print(trainno)
 
-    url = 'http://api.railwayapi.com/live/train/'+str(trainno)+'/doj/' + str(time.strftime("%Y%m%d")) + '/apikey/' + railway_api + '/'
+    print(trainno)
+    #print(trainno2)
+    url = 'http://api.railwayapi.com/live/train/'+str(trainno)+'/doj/'+str(time.strftime("%Y%m%d"))+'/apikey/'+railway_api+'/'
     parsed_json = json.loads(requests.get(url).text)
     if str(parsed_json['response_code'])=='204':
-        context['train_status'] = 'Wrong Train no'
+        context['train_status'] = 'Invalid train no./Server not responding'
         return context
+
     if str(parsed_json['response_code']) == '510':
         context['train_status'] = parsed_json['error']
         return context
     train_status = parsed_json['position']
     context['train_status'] = train_status
     return context
+
+
 def fetch_stncode(request):
     context = request['context']
     entities = request['entities']
     userinp=str(first_entity_value(entities,'location')).upper()
-    print(userinp)
+    #print(userinp)
     name=stn_code_name(userinp)
     if name=='':
         context['stncode'] = "Wrong station code or enter in code capital letters"
         return context
     context['stncode'] = name
     return context
+
 def stn_code_name(userinp):
     url = 'http://api.railwayapi.com/code_to_name/code/' + str(userinp) + '/apikey/' + railway_api + '/'
     parsed_json = json.loads(requests.get(url).text)
@@ -147,15 +157,33 @@ def stn_name_to_code(userinp):
 def fetch_train(requests):
     context = requests['context']
     entities = requests['entities']
-    origin = stn_name_to_code(first_entity_value(entities, 'origin').upper())
-    dest = stn_name_to_code(first_entity_value(entities, 'destination').upper())
+    data = {'orgin': '', 'dest': '', "date": ''}
+    #data=context['missingDate']
     dt = first_entity_value(entities, 'datetime')
+    print(dt)
+    dest = stn_name_to_code(first_entity_value(entities, 'destination').upper())
+    origin = stn_name_to_code(first_entity_value(entities, 'origin').upper())
+    if dest=='':
+        context['train_list']="Wrong/Invalid destination name"
+        return context
+    elif origin=='':
+        context['train_list']='Wrong/Invalid source name'
+        return context
+    print(origin)
+    print(dest)
+    if dt==None:
+
+        data['orgin']=origin
+        data['dest']=dest
+        context['missingDate']=data
+        return context
     month = dt[5:7]
     date = dt[8:10]
     url = 'http://api.railwayapi.com/between/source/'+str(origin)+'/dest/'+str(dest)+'/date/'+str(date)+'-'+str(month)+'/apikey/'+railway_api+'/'
     train_list=train_btw_stn(url)
     context['train_list']=train_list
     return context
+
 
 def train_btw_stn(url):
     parsed_json = json.loads(requests.get(url).text)
@@ -200,7 +228,29 @@ def fetch_reschedule(request):
     context['reschedule_train']=str(reschleduled_train)
     return context
 
+def fetch_route(request):
+    context = request['context']
+    entities = request['entities']
+    trainno = str(first_entity_value(entities, 'number'))
+    trainno2 = str(first_entity_value(entities, 'location'))
+    if trainno == 'None':
+        num = (re.findall(r'\b\d+\b', str(trainno2)))
+        if len(num) > 0:
+            trainno = num[0]
 
+    if trainno==None:
+        context['missingLocation']='yes'
+        return context
+    url = 'http://api.railwayapi.com/route/train/'+trainno+'/apikey/' + railway_api + '/'
+    parsed_json = json.loads(requests.get(url).text)
+    # route = parsed_json['route']
+    reschleduled_train = ''
+
+    tran_route = 'Station  ARVL  DEPT\n'
+    for x in range(len(parsed_json['route'])):
+        tran_route = tran_route + (parsed_json['route'][x]['fullname']) + ' ' + parsed_json['route'][x]['scharr'] + ' ' + parsed_json['route'][x]['schdep'] + '\n'
+    context['train_route']=tran_route
+    return context
 
 actions = {
     'send': send,
@@ -212,7 +262,7 @@ actions = {
     'fetch-train':fetch_train,
     'fetch-cancelled':fetch_cancelled,
     'fetch-reschedule':fetch_reschedule,
-}
+    }
 
 client = Wit(access_token=access_token, actions=actions)
 client.interactive()
